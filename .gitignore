@@ -1,0 +1,48 @@
+# Secrets
+.env
+!.env.example
+*.local
+
+# Node
+node_modules/
+**/node_modules/
+.pnpm-store/
+dist/
+.next/
+.turbo/
+
+# Build
+**/bin/
+**/coverage/
+*.log
+*.out
+*.bin
+*.tsbuildinfo
+*.tar.gz
+
+# Local caches / scratch files
+.gocache/
+.tmp/
+**/.gocache/
+
+# Local operation artifacts
+backend/img/
+sub2api-account-*.json
+scripts/deploy_web_fix.py
+tools/check_remote_*.py
+tools/inspect_*_trace.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Cursor 私有规则不入仓（项目规则保留）
+# .cursor/rules/ 已纳入版本控制（项目级）
+
+# 大图素材原档（按需）
+/assets/raw/
