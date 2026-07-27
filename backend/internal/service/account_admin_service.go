@@ -21,15 +21,18 @@ const grokTokenTTL = 72 * time.Hour
 
 // AccountAdminService 管理后台对账号池的增删改查 + 批量导入。
 type AccountAdminService struct {
-	repo    *repo.AccountRepo
-	pool    *AccountPool
-	aes     *crypto.AESGCM
-	testSvc *AccountTestService // 可空：未注入则 Test/Refresh 返回不可用
+	repo        *repo.AccountRepo
+	pool        *AccountPool
+	aes         *crypto.AESGCM
+	testSvc     *AccountTestService // 可空：未注入则 Test/Refresh 返回不可用
+	proxySvc    *ProxyService
+	openaiOAuth *OpenAIOAuthService
+	cfg         *SystemConfigService
 }
 
 // NewAccountAdminService 构造。aes 必须非空。
-func NewAccountAdminService(r *repo.AccountRepo, pool *AccountPool, aes *crypto.AESGCM) *AccountAdminService {
-	return &AccountAdminService{repo: r, pool: pool, aes: aes}
+func NewAccountAdminService(r *repo.AccountRepo, pool *AccountPool, aes *crypto.AESGCM, proxySvc *ProxyService, openaiOAuth *OpenAIOAuthService, cfg *SystemConfigService) *AccountAdminService {
+	return &AccountAdminService{repo: r, pool: pool, aes: aes, proxySvc: proxySvc, openaiOAuth: openaiOAuth, cfg: cfg}
 }
 
 // SetTestService 注入测试服务（路由层装配后回填，避免循环依赖）。
@@ -800,6 +803,77 @@ func accountClientIDFromImport(c *dto.Sub2APICreds) string {
 		return cid
 	}
 	return ""
+}
+
+// ExchangeOAuthToken 用前端传来的 OAuth 授权码直接导入新账号
+func (s *AccountAdminService) ExchangeOAuthToken(ctx context.Context, adminID uint64, req *dto.AccountOAuthExchangeReq) (*model.Account, error) {
+	var proxyURL string
+	if req.ProxyID != nil && *req.ProxyID > 0 {
+		p, err := s.proxySvc.GetByID(ctx, *req.ProxyID)
+		if err == nil && p != nil && p.Status == model.ProxyStatusEnabled {
+			if u, err := s.proxySvc.BuildURL(p); err == nil && u != nil {
+				proxyURL = u.String()
+			}
+		}
+	} else if s.cfg.GlobalProxyEnabled(ctx) {
+		pid := s.cfg.GlobalProxyID(ctx)
+		if pid > 0 {
+			p, err := s.proxySvc.GetByID(ctx, pid)
+			if err == nil && p != nil && p.Status == model.ProxyStatusEnabled {
+				if u, err := s.proxySvc.BuildURL(p); err == nil && u != nil {
+					proxyURL = u.String()
+				}
+			}
+		}
+	}
+
+	clientID := "app_EMoamEEZ73f0CkXaXp7hrann" // Codex CLI 客户端 ID
+	tr, err := s.openaiOAuth.ExchangeCode(ctx, req.Code, req.CodeVerifier, req.RedirectURI, clientID, proxyURL)
+	if err != nil {
+		return nil, errcode.GPTUnavailable.Wrap(err).WithMsg("换取 Token 失败: " + err.Error())
+	}
+
+	name := strings.TrimSpace(req.Email)
+	if name != "" {
+		if idx := strings.Index(name, "@"); idx > 0 {
+			name = name[:idx]
+		}
+	} else {
+		if len(tr.AccessToken) > 10 {
+			name = "oauth-" + tr.AccessToken[len(tr.AccessToken)-10:]
+		} else {
+			name = "oauth-import"
+		}
+	}
+	name = clampImportAccountName(name)
+
+	createReq := &dto.AccountCreateReq{
+		Provider:     model.ProviderGPT,
+		Name:         name,
+		AuthType:     model.AuthTypeOAuth,
+		AccessToken:  tr.AccessToken,
+		RefreshToken: tr.RefreshToken,
+		SessionToken: tr.IDToken,
+		ClientID:     clientID,
+		ProxyID:      req.ProxyID,
+		Weight:       req.Weight,
+	}
+	if createReq.Weight <= 0 {
+		createReq.Weight = 10
+	}
+
+	acc, err := s.Create(ctx, adminID, createReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.testSvc != nil {
+		go func() {
+			_, _ = s.testSvc.Test(context.Background(), acc)
+			s.pool.Reload(model.ProviderGPT)
+		}()
+	}
+	return acc, nil
 }
 
 // Test 触发账号连通性测试。

@@ -144,6 +144,22 @@ func (h *AdminAccountHandler) BatchImport(c *gin.Context) {
 	response.OK(c, res)
 }
 
+// ImportOAuth POST /admin/api/v1/accounts/oauth/exchange
+func (h *AdminAccountHandler) ImportOAuth(c *gin.Context) {
+	var req dto.AccountOAuthExchangeReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.InvalidParam.Wrap(err))
+		return
+	}
+	uid := middleware.UID(c)
+	acc, err := h.svc.ExchangeOAuthToken(c.Request.Context(), uid, &req)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"id": acc.ID})
+}
+
 // BatchDelete POST /admin/api/v1/accounts/batch-delete
 func (h *AdminAccountHandler) BatchDelete(c *gin.Context) {
 	var req dto.AccountBatchDeleteReq

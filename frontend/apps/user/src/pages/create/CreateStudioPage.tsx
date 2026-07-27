@@ -19,7 +19,7 @@ import {
   Trash2,
   Video,
   X,
-  LayoutTemplate, // 新增图标
+  LayoutTemplate, 
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -293,11 +293,19 @@ export default function CreateStudioPage() {
     return [...current, ...rest].filter((item, idx, arr) => arr.findIndex((x) => x.task_id === item.task_id) === idx);
   }, [history.data?.list, task]);
 
+  // ======= 核心修改：调整分辨率的倍数 =======
+  const getImageResMultiplier = (res: string) => {
+    if (res === '2K') return 2;
+    if (res === '4K') return 20; // 4K 从 4 改为 20倍
+    return 1;
+  };
+
   const expectedCost = mode === 'video'
     ? Math.round(((videoModels.find((m) => m.code === videoModel)?.cost ?? 20) * duration) / 6)
     : mode === 'text'
       ? '按实际 Token'
-      : (imageModels.find((m) => m.code === imageModel)?.cost ?? 4) * count;
+      : (imageModels.find((m) => m.code === imageModel)?.cost ?? 4) * count * getImageResMultiplier(imageResolution);
+      
   const maxAttachments = mode === 'video' ? VIDEO_MAX_ATTACHMENTS : TEXT_MAX_ATTACHMENTS;
 
   const handleTask = (t: GenerationTask) => {

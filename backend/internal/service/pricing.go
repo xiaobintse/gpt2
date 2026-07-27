@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/kleinai/backend/internal/provider"
 )
@@ -34,6 +35,22 @@ func DefaultChatPriceFn(modelCode string) ChatPrice {
 	}
 }
 
+// 获取图片分辨率计费倍率
+func imageResolutionMultiplier(params map[string]any) float64 {
+	if params == nil {
+		return 1.0
+	}
+	if res, ok := params["resolution"].(string); ok {
+		switch strings.ToUpper(strings.TrimSpace(res)) {
+		case "2K":
+			return 2.0
+		case "4K":
+			return 20.0 // --- 修改为 20 倍 ---
+		}
+	}
+	return 1.0
+}
+
 // DefaultPriceFn 实现 PriceFunc。
 func DefaultPriceFn(modelCode string, kind provider.Kind, params map[string]any) int64 {
 	if v, ok := DefaultPriceTable[modelCode]; ok {
@@ -47,12 +64,14 @@ func DefaultPriceFn(modelCode string, kind provider.Kind, params map[string]any)
 				factor := dur / 6
 				return int64(float64(v) * factor)
 			}
+		} else if kind == provider.KindImage {
+			return int64(float64(v) * imageResolutionMultiplier(params))
 		}
 		return v
 	}
 	switch kind {
 	case provider.KindImage:
-		return 400
+		return int64(400 * imageResolutionMultiplier(params))
 	case provider.KindVideo:
 		return 1500
 	}
@@ -85,6 +104,8 @@ func ConfigPriceFn(cfg *SystemConfigService) PriceFunc {
 								}
 								return int64(float64(row.UnitPoints) * (dur / 6))
 							}
+						} else if kind == provider.KindImage {
+							return int64(float64(row.UnitPoints) * imageResolutionMultiplier(params))
 						}
 						return row.UnitPoints
 					}
@@ -100,6 +121,8 @@ func ConfigPriceFn(cfg *SystemConfigService) PriceFunc {
 								}
 								return int64(float64(v) * (dur / 6))
 							}
+						} else if kind == provider.KindImage {
+							return int64(float64(v) * imageResolutionMultiplier(params))
 						}
 						return v
 					}

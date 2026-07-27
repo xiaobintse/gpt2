@@ -69,6 +69,16 @@ type AccountBatchImportReq struct {
 	Accounts []Sub2APIAccountItem `json:"accounts"`
 }
 
+// AccountOAuthExchangeReq OAuth 授权码换取凭证
+type AccountOAuthExchangeReq struct {
+	Code         string  `json:"code" binding:"required"`
+	CodeVerifier string  `json:"code_verifier" binding:"required"`
+	RedirectURI  string  `json:"redirect_uri" binding:"required"`
+	Email        string  `json:"email"`
+	ProxyID      *uint64 `json:"proxy_id"`
+	Weight       int     `json:"weight"`
+}
+
 // Sub2APIAccountItem sub2api 导出 JSON 中单条账号（字段名与常见导出保持一致）。
 type Sub2APIAccountItem struct {
 	Name        string        `json:"name"`
@@ -134,7 +144,7 @@ type AccountRefreshResp struct {
 	HasRefreshTK bool  `json:"has_refresh_token"`
 }
 
-// AccountListReq 列表过滤。
+// AccountBatchProbeResp 列表探测结果。
 type AccountBatchProbeResp struct {
 	Probed    int      `json:"probed"`
 	FailedIDs []uint64 `json:"failed_ids"`
@@ -156,6 +166,7 @@ type AccountBatchRefreshResp struct {
 	NextPage  int      `json:"next_page,omitempty"`
 }
 
+// AccountListReq 列表过滤。
 type AccountListReq struct {
 	Provider string `form:"provider"  binding:"omitempty,oneof=gpt grok"`
 	Status   *int8  `form:"status"`

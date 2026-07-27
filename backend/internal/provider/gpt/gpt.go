@@ -17,10 +17,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -242,14 +245,38 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 	if req.Mode == provider.ModeI2I || len(req.RefAssets) > 0 || strings.EqualFold(strParam(req.Params, "operation", ""), "edit") {
 		action = "edit"
 	}
+	
 	content := []map[string]any{{"type": "input_text", "text": req.Prompt}}
 	for _, ref := range req.RefAssets {
 		ref = strings.TrimSpace(ref)
 		if ref == "" {
 			continue
 		}
+
+		// --- 修复图生图/参考图为本地相对路径时报错的问题 ---
+		if strings.HasPrefix(ref, "/api/v1/gen/cached/") {
+			relPath := strings.TrimPrefix(ref, "/api/v1/gen/cached/")
+			root := strings.TrimSpace(os.Getenv("KLEIN_STORAGE_ROOT"))
+			if root == "" {
+				root = "/app/storage/public"
+			}
+			filePath := filepath.Join(root, filepath.FromSlash(relPath))
+			
+			if data, err := os.ReadFile(filePath); err == nil {
+				ext := strings.ToLower(filepath.Ext(filePath))
+				mimeType := "image/png"
+				if ext == ".jpg" || ext == ".jpeg" {
+					mimeType = "image/jpeg"
+				} else if ext == ".webp" {
+					mimeType = "image/webp"
+				}
+				ref = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+			}
+		}
+
 		content = append(content, map[string]any{"type": "input_image", "image_url": ref})
 	}
+	
 	input := []responseInputItem{{Type: "message", Role: "user", Content: content}}
 	tool := map[string]any{
 		"type":   "image_generation",

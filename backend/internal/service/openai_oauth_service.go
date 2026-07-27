@@ -97,3 +97,62 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken, cli
 	}
 	return &tr, nil
 }
+
+// ExchangeCode 用 authorization code 和 code_verifier 兑换 access_token 和 refresh_token。
+func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, code, verifier, redirectURI, clientID, proxyURL string) (*OpenAITokenResponse, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, errcode.InvalidParam.WithMsg("缺少 code")
+	}
+	if clientID == "" {
+		clientID = s.cfg.OpenAIClientID(ctx)
+	}
+	tokenURL := s.cfg.OpenAITokenURL(ctx)
+
+	client, err := outbound.NewClient(outbound.Options{
+		ProxyURL: proxyURL,
+		Timeout:  30 * time.Second,
+		Mode:     outbound.ModeUTLS,
+		Profile:  outbound.ProfileChrome,
+	})
+	if err != nil {
+		return nil, errcode.Internal.Wrap(err)
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("client_id", clientID)
+	form.Set("code", code)
+	form.Set("code_verifier", verifier)
+	form.Set("redirect_uri", redirectURI)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, errcode.Internal.Wrap(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "codex-cli/0.91.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI 授权码兑换请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode/100 != 2 {
+		msg := strings.TrimSpace(string(body))
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		return nil, fmt.Errorf("OpenAI 返回 %d: %s", resp.StatusCode, msg)
+	}
+	var tr OpenAITokenResponse
+	if err := json.Unmarshal(body, &tr); err != nil {
+		return nil, fmt.Errorf("解析 OpenAI Token 响应失败: %w", err)
+	}
+	if tr.AccessToken == "" {
+		return nil, errors.New("OpenAI 响应缺少 access_token")
+	}
+	return &tr, nil
+}

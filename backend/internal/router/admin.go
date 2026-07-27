@@ -48,13 +48,13 @@ func MountAdmin(r *gin.Engine, deps *bootstrap.Deps) *service.AccountPool {
 	// === services ===
 	adminAuth := service.NewAdminAuthService(adminRepo, deps.JWT)
 	adminUserSvc := service.NewAdminUserService(userRepo, walletRepo)
-	accountAdmin := service.NewAccountAdminService(accountRepo, pool, deps.AES)
 	billingSvc := service.NewBillingService(deps.DB, walletRepo)
 	cdkSvc := service.NewCDKService(deps.DB, billingSvc)
 	promoSvc := service.NewAdminPromoService(promoRepo)
 	sysCfgSvc := service.NewSystemConfigService(sysCfgRepo)
 	proxySvc := service.NewProxyService(proxyRepo, deps.AES)
 	openaiOAuth := service.NewOpenAIOAuthService(sysCfgSvc)
+	accountAdmin := service.NewAccountAdminService(accountRepo, pool, deps.AES, proxySvc, openaiOAuth, sysCfgSvc)
 	accountTest := service.NewAccountTestService(accountRepo, proxySvc, sysCfgSvc, openaiOAuth, deps.AES)
 	// 把测试服务注入 AccountAdminService，使 Test/Refresh/BatchRefresh 走得通。
 	accountAdmin.SetTestService(accountTest)
@@ -100,6 +100,7 @@ func MountAdmin(r *gin.Engine, deps *bootstrap.Deps) *service.AccountPool {
 			acc.GET("", accountH.List)
 			acc.POST("", accountH.Create)
 			acc.POST("/import", accountH.BatchImport)
+			acc.POST("/oauth/exchange", accountH.ImportOAuth)
 			acc.POST("/batch-delete", accountH.BatchDelete)
 			acc.POST("/batch-assign-proxy", accountH.BatchAssignProxy)
 			acc.POST("/purge", accountH.Purge)
